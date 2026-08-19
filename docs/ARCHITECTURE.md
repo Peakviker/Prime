@@ -117,18 +117,25 @@ and the Postgres schema doesn't create itself — `deploy/README.md` now
 documents running `npx --package=@workflow/world-postgres bootstrap` once
 before first start.
 
-Acceptance:
-- `GET /eve/v1/health` answers — done, direct on port 3000; not yet through a
-  reverse proxy (none configured yet, see above).
-- `eve dev https://<host>` completes a real turn — unblocked now that
-  `AI_GATEWAY_API_KEY` is set; not yet actually run.
-- A session survives a process restart — the health check recovers after
-  `systemctl restart`, which is what the Postgres world makes possible;
-  restarting mid-session to confirm the *session itself* resumes (not just
-  that the process comes back) is still open. Now unblocked (a real model
-  call can create a session), just not yet exercised: start a turn, run
-  `sudo systemctl restart prime` mid-flight, and confirm it resumes instead
-  of erroring or restarting from scratch.
+Acceptance — **all three done, verified on the VM:**
+- `GET /eve/v1/health` answers — direct on port 3000. Not yet through a
+  reverse proxy (none configured; out of scope, see above).
+- A real turn completes — sent a live message (temporarily on `zai/glm-5.2`,
+  a free week Vercel granted; `agent/agent.ts` was restored to
+  `anthropic/claude-opus-5` afterward, git diff clean).
+- **A session survives a mid-flight restart**, not just the process: run
+  `wrun_01M0CQ007FHHBRVEQT01MAMQ36` started `09:52:45`; `systemctl restart
+  prime` fired `09:52:46`, ~0.3s in, mid-generation. Startup log:
+  `[world-postgres] Re-enqueued 4 active run(s) on startup`. The same run's
+  `turnWorkflow` restarted `09:52:50` and completed `09:53:02` — the model
+  finished the same response under the same `sessionId`, nothing lost.
+  Health stayed `active`/`enabled` throughout.
+
+This closes WP2's process-supervision and Workflow-world acceptance. Open:
+reverse proxy/TLS/public hostname, and swapping the `httpBasic()` stopgap
+(temporary `ROUTE_AUTH_BASIC_USERNAME`/`PASSWORD` on the VM) for JWT/OIDC
+before real users reach this over the web (item 3 above) — deliberately
+deferred until there's an actual public-facing chat to protect.
 
 ### WP3 — Collection and storage
 
