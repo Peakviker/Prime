@@ -1,0 +1,32 @@
+[Unit]
+Description=Prime eve agent
+Documentation=https://github.com/Peakviker/Prime
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+# Crash resilience: restart on any exit other than a clean stop, but back off
+# if it keeps failing so a bad deploy can't spin the VM.
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=prime
+Group=prime
+WorkingDirectory=/opt/prime
+EnvironmentFile=/opt/prime/.env
+Environment=PORT=3000
+Environment=NODE_ENV=production
+ExecStart=/opt/prime/node_modules/.bin/eve start --host 0.0.0.0
+Restart=always
+RestartSec=5
+
+# The eve process needs the docker CLI (sandbox backend) and network egress
+# to Hyperliquid's API, the AI Gateway, and Postgres.
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/prime
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
