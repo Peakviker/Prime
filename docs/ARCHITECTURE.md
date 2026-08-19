@@ -92,8 +92,8 @@ platform-specific.
    `httpBasic()` fallback already in `agent/channels/eve.ts` covers the gap;
    replace it with JWT or OIDC before the web chat carries real users.
 4. **Model access.** Set `AI_GATEWAY_API_KEY` — OIDC no longer applies.
-   **Outstanding:** deployed with this unset; model calls will 403 until the
-   operator sets it in `/opt/prime/.env` and restarts.
+   **Done:** set in `/opt/prime/.env` on the VM, `prime.service` restarted,
+   health answers `{"ok":true,"status":"ready"}`.
 
 Reverse proxy must forward **both** `/eve/` and `/.well-known/workflow/`,
 with TLS and a public hostname (Telegram's webhook lands here).
@@ -120,13 +120,15 @@ before first start.
 Acceptance:
 - `GET /eve/v1/health` answers — done, direct on port 3000; not yet through a
   reverse proxy (none configured yet, see above).
-- `eve dev https://<host>` completes a real turn — blocked on
-  `AI_GATEWAY_API_KEY`.
+- `eve dev https://<host>` completes a real turn — unblocked now that
+  `AI_GATEWAY_API_KEY` is set; not yet actually run.
 - A session survives a process restart — the health check recovers after
   `systemctl restart`, which is what the Postgres world makes possible;
   restarting mid-session to confirm the *session itself* resumes (not just
-  that the process comes back) is still open, and needs a real model call to
-  create a session in the first place.
+  that the process comes back) is still open. Now unblocked (a real model
+  call can create a session), just not yet exercised: start a turn, run
+  `sudo systemctl restart prime` mid-flight, and confirm it resumes instead
+  of erroring or restarting from scratch.
 
 ### WP3 — Collection and storage
 
