@@ -84,12 +84,54 @@ mid-session, and confirm it resumes instead of vanishing.
 sudo systemctl restart prime
 ```
 
+## TLS and reverse proxy
+
+`prime.service` binds `eve start` to `127.0.0.1` only (not `0.0.0.0`) —
+Caddy is the sole public entry point, terminating TLS and reverse-proxying
+everything through unrewritten. This matters because a proxy that forwards
+only `/eve/` looks correct and hangs: `/.well-known/workflow/` must reach
+eve too, or Workflow callbacks stall forever (see the "traps" section of
+`docs/ARCHITECTURE.md`). `deploy/Caddyfile`'s bare `reverse_proxy` with no
+path matchers forwards everything, so this isn't something to get wrong by
+omission the way a per-path nginx config could be.
+
+Prerequisite: an A record for the hostname in `deploy/Caddyfile` (default
+`vm.gameseller.digital`) pointing at this VM's public IP. Caddy's ACME
+challenge fails without it — check propagation first (`dig +short
+<hostname>`) if the next step errors.
+
+```bash
+# 1. Install Caddy (see https://caddyserver.com/docs/install#debian-ubuntu-raspbian).
+sudo apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+sudo apt-get update
+sudo apt-get install -y caddy
+
+# 2. Install the site config (edit the hostname first if it isn't
+#    vm.gameseller.digital) and reload.
+sudo cp deploy/Caddyfile /etc/caddy/Caddyfile
+sudo systemctl reload caddy
+
+# 3. Open 80/443 in whatever sits in front of this VM (GCP firewall rules,
+#    ufw, ...) — Caddy needs 80 for the ACME HTTP-01 challenge and renewal,
+#    not just 443. If port 3000 was previously open to the internet at the
+#    same firewall layer, close it now that eve binds localhost-only.
+```
+
+## Verify
+
+```bash
+curl -s https://vm.gameseller.digital/eve/v1/health
+```
+
+A cert mismatch or connection refused usually means the A record hasn't
+propagated yet, or port 80 is still blocked (check `journalctl -u caddy -n
+50` for the ACME error).
+
 ## Not covered here
 
-- **TLS and a public hostname.** Put a reverse proxy (Caddy, nginx) in front
-  of port 3000 that forwards `/eve/` and `/.well-known/workflow/` unrewritten
-  — see the "traps" section of `docs/ARCHITECTURE.md`. Required before
-  Telegram's webhook or a real user can reach this.
 - **Route auth beyond the httpBasic() fallback** already in
-  `agent/channels/eve.ts`. Fine as a stopgap; replace with JWT/OIDC before
-  the web chat carries real users (WP2 item 3 in the plan).
+  `agent/channels/eve.ts`. Fine as a stopgap now that it's no longer
+  reachable in plain HTTP directly; replace with JWT/OIDC before the web
+  chat carries real users (WP2 item 3 in the plan).

@@ -97,6 +97,13 @@ platform-specific.
 
 Reverse proxy must forward **both** `/eve/` and `/.well-known/workflow/`,
 with TLS and a public hostname (Telegram's webhook lands here).
+`deploy/Caddyfile` covers this: a bare `reverse_proxy` with no path
+matchers, so there's no per-path config to get wrong the way a scoped nginx
+`location /eve/ { ... }` block could omit the workflow prefix. `prime.service`
+now binds `eve start` to `127.0.0.1` instead of `0.0.0.0` accordingly —
+Caddy becomes the only public entry point. See `deploy/README.md` for
+install and the DNS prerequisite (an A record for the hostname, pointing at
+the VM, that Caddy's ACME challenge needs). Not yet applied on the VM.
 
 **Process supervision.** `deploy/prime.service` (systemd, `Restart=always`)
 plus the Postgres world above are both required for "doesn't crash": the
@@ -118,8 +125,9 @@ documents running `npx --package=@workflow/world-postgres bootstrap` once
 before first start.
 
 Acceptance — **all three done, verified on the VM:**
-- `GET /eve/v1/health` answers — direct on port 3000. Not yet through a
-  reverse proxy (none configured; out of scope, see above).
+- `GET /eve/v1/health` answers — direct on port 3000 at the time these were
+  checked. `deploy/Caddyfile` now fronts this with TLS; re-verify through
+  the proxy (`https://<hostname>/eve/v1/health`) once it's applied.
 - A real turn completes — sent a live message (temporarily on `zai/glm-5.2`,
   a free week Vercel granted; `agent/agent.ts` was restored to
   `anthropic/claude-opus-5` afterward, git diff clean).
@@ -132,10 +140,12 @@ Acceptance — **all three done, verified on the VM:**
   Health stayed `active`/`enabled` throughout.
 
 This closes WP2's process-supervision and Workflow-world acceptance. Open:
-reverse proxy/TLS/public hostname, and swapping the `httpBasic()` stopgap
-(temporary `ROUTE_AUTH_BASIC_USERNAME`/`PASSWORD` on the VM) for JWT/OIDC
-before real users reach this over the web (item 3 above) — deliberately
-deferred until there's an actual public-facing chat to protect.
+applying `deploy/Caddyfile` on the VM (code/docs ready; needs the DNS A
+record and a run through `deploy/README.md`'s TLS section), and swapping
+the `httpBasic()` stopgap (temporary `ROUTE_AUTH_BASIC_USERNAME`/`PASSWORD`
+on the VM) for JWT/OIDC before real users reach this over the web (item 3
+above) — deliberately deferred until there's an actual public-facing chat
+to protect.
 
 ### WP3 — Collection and storage
 

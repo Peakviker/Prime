@@ -17,7 +17,11 @@ WorkingDirectory=/opt/prime
 EnvironmentFile=/opt/prime/.env
 Environment=PORT=3000
 Environment=NODE_ENV=production
-ExecStart=/opt/prime/node_modules/.bin/eve start --host 0.0.0.0
+# Bound to localhost only: Caddy (deploy/Caddyfile) is the sole public entry
+# point, terminating TLS and reverse-proxying here. Do not widen this to
+# 0.0.0.0 unless the reverse proxy in front of it is removed too — otherwise
+# the httpBasic()-only backend sits directly on the internet over plain HTTP.
+ExecStart=/opt/prime/node_modules/.bin/eve start --host 127.0.0.1
 Restart=always
 RestartSec=5
 
