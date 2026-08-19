@@ -13,6 +13,7 @@
     "typecheck": "tsc"
   },
   "dependencies": {
+    "@nktkas/hyperliquid": "0.33.3",
     "@vercel/connect": "0.4.3",
     "ai": "^7.0.58",
     "eve": "^0.39.0",
@@ -25,5 +26,4 @@
   "engines": {
     "node": "24.x"
   }
-
 }
