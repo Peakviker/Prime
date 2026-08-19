@@ -178,10 +178,57 @@ Budget the collectors against the same token bucket as interactive use.
 `clearinghouseState` costs 2 weight, so ~50 addresses per sweep is cheap;
 paginated endpoints cost 20 plus a surcharge per page and need more care.
 
+**Status: implemented, not yet verified against live traffic.** Same
+constraint as WP1 — the authoring sandbox's network policy blocks
+`api.hyperliquid.xyz` and the AI Gateway catalog (`eve info`/`eve build`
+fail here with a 403), so this typechecks but has not run end to end. First
+job on the VM is to verify it, not to rewrite it.
+
+- `agent/lib/db.ts` — the three tables (`prime.watched_addresses`,
+  `prime.position_snapshots`, `prime.funding_snapshots`) live in a `prime`
+  schema on the **same** Postgres instance and database the Workflow world
+  uses (`WORKFLOW_POSTGRES_URL`), just a different schema, so it doesn't
+  collide with the world's own tables. Self-migrating (`ensureMigrated()`,
+  idempotent `CREATE ... IF NOT EXISTS`) — unlike the Workflow world, there
+  is no separate bootstrap command to run first.
+- `agent/lib/watched-addresses.ts` — the registry. `agent/tools/watch_address.ts`
+  is the only write path into it: add/remove/list, and `reason` is required
+  on add, which is what makes "why each was added" durable rather than
+  tribal knowledge.
+- `agent/schedules/collect-positions.ts` and `agent/schedules/collect-funding.ts`
+  — both `cron: "*/5 * * * *"`, both plain `run()` handlers with no agent
+  session and no model call. `collect-positions` walks the watch list through
+  `clearinghouseState` (2 weight each); `collect-funding` is one
+  `metaAndAssetCtxs` call (20 weight) covering every listed market, same as
+  `get_market_state`. Both go through the same `limited()` token bucket as
+  interactive tool calls (`agent/lib/hyperliquid.ts`).
+- **Idempotency.** `agent/lib/snapshot-time.ts` buckets each sweep's
+  `snapshot_at` to the same 5-minute cadence the schedules fire on
+  (`Math.floor(Date.now() / 300_000) * 300_000`), instead of the exact
+  moment each row is written. A retry or manual re-trigger landing in the
+  same window computes the same `snapshot_at`, so the tables' `UNIQUE
+  (address, coin, snapshot_at)` / `UNIQUE (coin, snapshot_at)` constraints
+  plus `ON CONFLICT DO NOTHING` turn it into a no-op.
+- `agent/tools/get_address_position_history.ts` and
+  `agent/tools/get_open_interest_history.ts` — read paths over the two
+  snapshot tables, so the collected data is answerable from chat before WP6's
+  dashboards exist. Open interest has no retroactive Hyperliquid endpoint at
+  all, unlike funding (`get_funding_history` reads Hyperliquid's own history
+  and reaches further back) — these tables are the only source for it.
+
 Acceptance:
-- A sweep runs on its cron cadence and writes rows.
+- A sweep runs on its cron cadence and writes rows. **Not yet verified** —
+  needs live Hyperliquid access; verify on the VM via the dev dispatch route
+  or a production tick, per `deploy/README.md`.
 - Interactive questions stay responsive while a sweep is running.
-- Re-running a sweep does not duplicate rows.
+  Architecturally true (`limited()` is a promise-queued in-memory limiter,
+  not a blocking call, so a sweep's requests interleave with interactive
+  ones on the same budget instead of locking it out), but not yet observed
+  under real concurrent load.
+- Re-running a sweep does not duplicate rows. **Verified by construction**
+  (see idempotency above) but not yet exercised against a live Postgres —
+  this sandbox has no Docker daemon to bring up `docker-compose.yml`'s
+  `postgres` service either.
 
 ### WP4 — Sandbox analysis stack
 
