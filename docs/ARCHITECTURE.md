@@ -80,8 +80,14 @@ platform-specific.
 1. **Workflow world.** Replace the default local world with a Postgres-backed
    one via `experimental.workflow.world` in `agent/agent.ts`. Pin it to the
    same `@workflow/*` line as the installed eve (currently `5.0.0-beta`).
+   **Done:** `agent/agent.ts` sets it to `@workflow/world-postgres@5.0.0-beta.34`
+   — its own `@workflow/{errors,utils,world,world-local}` sub-dependencies
+   match eve's exactly, confirming the pin. Connection string via
+   `WORKFLOW_POSTGRES_URL`; `docker-compose.yml` provisions the Postgres
+   instance.
 2. **Sandbox backend.** Docker. Never `vercel()` — that would create hosted
-   sandboxes from the VM.
+   sandboxes from the VM. **Done:** `agent/sandbox.ts` pins `docker()`
+   explicitly rather than relying on `defaultBackend()`'s fallback order.
 3. **Route auth.** `vercelOidc()` authenticates nothing off Vercel. The
    `httpBasic()` fallback already in `agent/channels/eve.ts` covers the gap;
    replace it with JWT or OIDC before the web chat carries real users.
@@ -89,6 +95,17 @@ platform-specific.
 
 Reverse proxy must forward **both** `/eve/` and `/.well-known/workflow/`,
 with TLS and a public hostname (Telegram's webhook lands here).
+
+**Process supervision.** `deploy/prime.service` (systemd, `Restart=always`)
+plus the Postgres world above are both required for "doesn't crash": the
+unit alone restarts a dead process but loses in-flight sessions to the
+default in-memory world; the Postgres world alone doesn't restart anything
+by itself. See `deploy/README.md` for setup and `deploy/deploy.sh` for the
+build-and-restart step. Not yet run against a live VM — the authoring
+sandbox has no reachable Docker daemon for `docker()` sandbox sessions and
+no route to the AI Gateway catalog that `eve build` needs (same network
+constraint as WP1). First real run on the VM is the outstanding acceptance
+step below.
 
 Acceptance:
 - `GET /eve/v1/health` answers through the proxy.

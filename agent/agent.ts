@@ -7,4 +7,13 @@ export default defineAgent({
   // image input at all.
   model: "anthropic/claude-opus-5",
   reasoning: "high",
+  experimental: {
+    // Runtime lives on the VM (see docs/ARCHITECTURE.md), not Vercel, so the
+    // default local Workflow world (in-memory, lost on restart) won't do —
+    // a session must survive a process restart. WORKFLOW_POSTGRES_URL (or
+    // DATABASE_URL) points this at Postgres; see .env.example.
+    workflow: {
+      world: "@workflow/world-postgres",
+    },
+  },
 });
