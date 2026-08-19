@@ -97,6 +97,28 @@ platform-specific.
 
 Reverse proxy must forward **both** `/eve/` and `/.well-known/workflow/`,
 with TLS and a public hostname (Telegram's webhook lands here).
+`deploy/Caddyfile` covers this: a bare `reverse_proxy` with no path
+matchers, so there's no per-path config to get wrong the way a scoped nginx
+`location /eve/ { ... }` block could omit the workflow prefix. `prime.service`
+now binds `eve start` to `127.0.0.1` instead of `0.0.0.0` accordingly —
+Caddy becomes the only public entry point. See `deploy/README.md` for
+install and the DNS prerequisite (an A record for the hostname, pointing at
+the VM, that Caddy's ACME challenge needs).
+
+**Done, applied on the VM:** `vm.gameseller.digital` → the VM's public IP,
+Caddy installed, `deploy/Caddyfile` in place, Let's Encrypt cert issued
+(valid to 2026-11-17, auto-renew), `prime.service` updated to
+`--host 127.0.0.1` and restarted. `GET https://vm.gameseller.digital/eve/v1/health`
+answers `HTTP/2 200` over TLS 1.3; port 3000 is no longer reachable from
+outside the VM.
+
+The GCP firewall rule for 80/443 initially didn't apply — it was scoped to
+`target-tags: backeve`, but the VM itself carried no network tags, so
+nothing matched. Fixed with `gcloud compute firewall-rules update
+allow-http-https --no-target-tags`. Separately, `prime.service` needed
+re-copying to `/etc/systemd/system/` before the `--host 127.0.0.1` change
+took effect — the first restart after editing the repo's copy was still
+running the old `--host 0.0.0.0` unit.
 
 **Process supervision.** `deploy/prime.service` (systemd, `Restart=always`)
 plus the Postgres world above are both required for "doesn't crash": the
@@ -118,8 +140,9 @@ documents running `npx --package=@workflow/world-postgres bootstrap` once
 before first start.
 
 Acceptance — **all three done, verified on the VM:**
-- `GET /eve/v1/health` answers — direct on port 3000. Not yet through a
-  reverse proxy (none configured; out of scope, see above).
+- `GET /eve/v1/health` answers — now over TLS through Caddy at
+  `https://vm.gameseller.digital/eve/v1/health` (see above), not just
+  direct on port 3000.
 - A real turn completes — sent a live message (temporarily on `zai/glm-5.2`,
   a free week Vercel granted; `agent/agent.ts` was restored to
   `anthropic/claude-opus-5` afterward, git diff clean).
@@ -131,11 +154,11 @@ Acceptance — **all three done, verified on the VM:**
   finished the same response under the same `sessionId`, nothing lost.
   Health stayed `active`/`enabled` throughout.
 
-This closes WP2's process-supervision and Workflow-world acceptance. Open:
-reverse proxy/TLS/public hostname, and swapping the `httpBasic()` stopgap
-(temporary `ROUTE_AUTH_BASIC_USERNAME`/`PASSWORD` on the VM) for JWT/OIDC
-before real users reach this over the web (item 3 above) — deliberately
-deferred until there's an actual public-facing chat to protect.
+This closes all of WP2's acceptance criteria, including the reverse
+proxy/TLS piece. Open: swapping the `httpBasic()` stopgap (temporary
+`ROUTE_AUTH_BASIC_USERNAME`/`PASSWORD` on the VM) for JWT/OIDC before real
+users reach this over the web (item 3 above) — deliberately deferred until
+there's an actual public-facing chat to protect.
 
 ### WP3 — Collection and storage
 

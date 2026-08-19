@@ -1,0 +1,13 @@
+# Reverse proxy + automatic TLS for prime.service (127.0.0.1:3000).
+#
+# A plain reverse_proxy with no path matchers forwards every request
+# unrewritten — including /.well-known/workflow/, which must reach eve
+# byte-for-byte or Workflow callbacks stall forever (see the "traps" section
+# of docs/ARCHITECTURE.md). Do not add path stripping or rewrites here.
+#
+# Replace the placeholder with the real hostname (an A record must already
+# point it at this VM's public IP — Caddy's ACME challenge fails otherwise)
+# before installing this file.
+vm.gameseller.digital {
+	reverse_proxy 127.0.0.1:3000
+}
