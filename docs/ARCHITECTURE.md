@@ -92,6 +92,8 @@ platform-specific.
    `httpBasic()` fallback already in `agent/channels/eve.ts` covers the gap;
    replace it with JWT or OIDC before the web chat carries real users.
 4. **Model access.** Set `AI_GATEWAY_API_KEY` — OIDC no longer applies.
+   **Outstanding:** deployed with this unset; model calls will 403 until the
+   operator sets it in `/opt/prime/.env` and restarts.
 
 Reverse proxy must forward **both** `/eve/` and `/.well-known/workflow/`,
 with TLS and a public hostname (Telegram's webhook lands here).
@@ -101,17 +103,30 @@ plus the Postgres world above are both required for "doesn't crash": the
 unit alone restarts a dead process but loses in-flight sessions to the
 default in-memory world; the Postgres world alone doesn't restart anything
 by itself. See `deploy/README.md` for setup and `deploy/deploy.sh` for the
-build-and-restart step. Not yet run against a live VM — the authoring
-sandbox has no reachable Docker daemon for `docker()` sandbox sessions and
-no route to the AI Gateway catalog that `eve build` needs (same network
-constraint as WP1). First real run on the VM is the outstanding acceptance
-step below.
+build-and-restart step.
+
+**Run on the target VM (backeve):** Docker installed, dedicated `prime`
+system user (in the `docker` group), Postgres up via compose, `prime.service`
+enabled and active, superseding the ad-hoc `eve-app.service` an earlier
+manual deploy had left running in-memory. `GET /eve/v1/health` answers within
+5s of a restart. Two gaps surfaced during this run and are now fixed here:
+`pnpm-workspace.yaml` needed explicit `allowBuilds: false` entries for three
+transitive native packages (`@mongodb-js/zstd`, `cbor-extract`,
+`node-liblzma`) or a non-interactive `pnpm install --frozen-lockfile` fails;
+and the Postgres schema doesn't create itself — `deploy/README.md` now
+documents running `npx --package=@workflow/world-postgres bootstrap` once
+before first start.
 
 Acceptance:
-- `GET /eve/v1/health` answers through the proxy.
-- `eve dev https://<host>` completes a real turn.
-- A session survives a process restart — this is what proves the Workflow
-  world is actually persisting.
+- `GET /eve/v1/health` answers — done, direct on port 3000; not yet through a
+  reverse proxy (none configured yet, see above).
+- `eve dev https://<host>` completes a real turn — blocked on
+  `AI_GATEWAY_API_KEY`.
+- A session survives a process restart — the health check recovers after
+  `systemctl restart`, which is what the Postgres world makes possible;
+  restarting mid-session to confirm the *session itself* resumes (not just
+  that the process comes back) is still open, and needs a real model call to
+  create a session in the first place.
 
 ### WP3 — Collection and storage
 

@@ -11,6 +11,15 @@ minimumReleaseAgeExclude:
   - workflow
 allowBuilds:
   sharp: false
+  # Optional native build scripts pulled in transitively by
+  # @workflow/world-postgres (cbor-x, pg, graphile-worker). Without an
+  # explicit answer here, `pnpm install` prompts interactively and a
+  # non-interactive `pnpm install --frozen-lockfile` (deploy/deploy.sh) fails.
+  # Prebuilt binaries cover these on standard Linux x64/arm64 hosts, so
+  # skipping their build scripts is safe.
+  "@mongodb-js/zstd": false
+  cbor-extract: false
+  node-liblzma: false
 # Compatibility for eve releases with an incomplete runtime manifest.
 packageExtensions:
   "eve@>=0.6.0-beta.13 <=0.7.0":

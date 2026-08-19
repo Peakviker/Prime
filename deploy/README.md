@@ -31,17 +31,31 @@ sudo chown -R prime:prime /opt/prime
 # 3. Bring up Postgres for the Workflow world.
 docker compose up -d postgres
 
-# 4. Configure secrets. Copy .env.example, fill in AI_GATEWAY_API_KEY (model
+# 4. Create the world-postgres schema. The package does not create it on
+#    first connect — without this, prime.service starts but every session
+#    fails with relation "workflow.workflow_runs" does not exist.
+WORKFLOW_POSTGRES_URL=postgres://world:world@localhost:5432/world \
+  npx --package=@workflow/world-postgres bootstrap
+
+# 5. Configure secrets. Copy .env.example, fill in AI_GATEWAY_API_KEY (model
 #    access off Vercel), ROUTE_AUTH_BASIC_USERNAME/PASSWORD, and
 #    WORKFLOW_POSTGRES_URL (matches the docker-compose credentials by
 #    default: postgres://world:world@localhost:5432/world).
 sudo -u prime cp .env.example /opt/prime/.env
 sudo -u prime $EDITOR /opt/prime/.env
 
-# 5. Install and enable the systemd unit.
+# 6. Install and enable the systemd unit.
 sudo cp deploy/prime.service /etc/systemd/system/prime.service
 sudo systemctl daemon-reload
 sudo systemctl enable prime
+```
+
+If a running `eve-app.service` or other ad-hoc unit already serves port 3000
+from an earlier manual deploy, stop and disable it first — two processes
+binding the same port will fight:
+
+```bash
+sudo systemctl disable --now eve-app.service
 ```
 
 ## Deploy (first run and every update)
