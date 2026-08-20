@@ -27,9 +27,18 @@ Two tiers, split at the runtime boundary.
 | Runs | Next.js: dashboards, web chat UI, admin | eve runtime (`eve build && eve start`) |
 | Also | — | Postgres (market data + agent memory), Docker sandbox, Nitro cron, Telegram webhook |
 | Talks to | The VM, through its own API routes | Hyperliquid public API, AI Gateway |
+| Never does | Cron jobs, Hyperliquid/Postgres/Docker calls, data collection | — |
 
 The browser never calls the VM directly. Vercel's API routes proxy it, which
 keeps credentials server-side and avoids CORS entirely.
+
+Vercel stays a **thin client**, deliberately: it renders already-aggregated
+data and proxies reads to the VM's authenticated API, nothing more. No
+`defineSchedule`, no direct Hyperliquid/Postgres/Docker access, and no data
+collection ever runs on Vercel — all of that is backend work and stays on
+the VM, per the "Runtime location" row below. Minimizing what runs (and what
+crosses the wire) on the frontend is a locked decision, not a style
+preference — see WP6 and the Traps entry on Vercel Cron.
 
 `defineRemoteAgent` is **not** part of this design. That primitive is for two
 eve deployments delegating to each other; here there is one runtime and one
@@ -41,6 +50,7 @@ UI, which is an ordinary client-server call.
 |---|---|---|
 | Trading capability | Read-only, permanently | Everything needed is public data. No key means no blast radius. |
 | Runtime location | The VM, not Vercel | Vercel's sandbox sleeps after 30 min and may lose `/workspace` on replacement; Docker on the VM keeps a long-lived container per session. Research needs cached datasets and long backtests. |
+| Vercel's job (WP6) | Thin client only — render + proxy | No cron, no direct Hyperliquid/Postgres/Docker access, no collection or compute of any kind on Vercel. All of that is backend work; Vercel's API routes only forward reads to the VM and return what it already computed. Confirmed necessary by the Hobby-plan cron limit in Traps, not just a preference. |
 | Storage | Postgres on the VM | Serves double duty: market data plus the Workflow world that backs durable session state ("agent memory"). |
 | Hyperliquid client | `@nktkas/hyperliquid` `InfoClient` | Typed and valibot-validated request/response schemas. Writing shapes by hand would be unverifiable guesswork. |
 | Rate limiting | One process-wide token bucket | The 1200 weight/min budget is per-IP and shared between chat and scheduled collectors. A per-tool limiter cannot see the whole budget. |
@@ -230,6 +240,18 @@ Acceptance:
   this sandbox has no Docker daemon to bring up `docker-compose.yml`'s
   `postgres` service either.
 
+**Fallout on Vercel.** The first push of these schedules broke this repo's
+Vercel project: its GitHub integration still auto-builds the root `agent/`
+tree on every push — a leftover from before WP2 moved the runtime here to
+the VM — and `eve build`'s Vercel preset turns every `defineSchedule(...)`
+into a Vercel Cron Job unconditionally. The Hobby plan only allows daily
+cron, so a `*/5 * * * *` schedule fails the whole deployment with
+`cron_jobs_limits_reached`. Fixed with root `vercel.json`'s `ignoreCommand`
+(see Traps and the Vercel row in Locked decisions) rather than by slowing
+the schedules down — 5-minute cadence is a real product requirement here,
+not a knob to trade away for a deployment that was never supposed to be
+running this code in the first place.
+
 ### WP4 — Sandbox analysis stack
 
 Install Python with pandas, numpy, duckdb, pyarrow, matplotlib and scipy in
@@ -275,10 +297,36 @@ Next.js: dashboards over the Postgres data, web chat against the eve runtime,
 and admin over watched addresses and schedules. Browser talks only to Vercel;
 Vercel's API routes talk to the VM.
 
+**Vercel stays a thin client — this is a hard constraint, not a default.**
+Every page and API route in this package:
+- Fetches through a Vercel API route that calls the VM's authenticated HTTP
+  API and returns what the VM already computed. It does not call
+  Hyperliquid, Postgres, or Docker directly, and does not duplicate logic
+  that already lives in `agent/tools/` or `agent/schedules/`.
+- Defines **no** `defineSchedule` and runs no cron of any kind. Collection,
+  backtesting, and any other scheduled or long-running work stays on the VM
+  (WP3/WP4/WP5). A Vercel API route may be called *by* something (the
+  browser, a webhook), but it never wakes itself up on a timer.
+- Keeps requests to the VM minimal: fetch what a page needs to render, not
+  more. Vercel's own Hobby-plan constraints (30-minute sandbox sleep, cron
+  capped at daily, `/workspace` not durable — see Locked decisions and
+  Traps) make it the wrong place for anything heavier than that by
+  construction, the same way they already ruled it out as the runtime in
+  WP2.
+
+Before writing any WP6 code, re-read this section and the Vercel row in
+Locked decisions — this exists because a scheduling mistake in WP3 (schedule
+code correctly on the VM, but built on Vercel too via a stale GitHub
+integration) broke a deployment before this package even started, and it is
+easy to repeat that mistake by accident inside `app/api/*` routes later.
+
 Acceptance:
 - Dashboards render from collected data.
 - Web chat holds a conversation, including streaming.
 - No credential for the VM ever reaches the browser.
+- No `defineSchedule`, direct Hyperliquid/Postgres/Docker call, or other
+  backend-shaped work exists anywhere under the Next.js app — every data
+  path is a thin proxy to a VM endpoint.
 
 ## Traps
 
@@ -303,6 +351,19 @@ handler form with a channel handoff.
 
 **Hyperliquid's rate limit is per-IP, not per-process.** Collectors and chat
 share one budget. Overrunning it penalizes everything at once.
+
+**Any `defineSchedule` anywhere in the tree becomes a Vercel Cron Job the
+moment Vercel builds that tree at all.** There is no per-schedule opt-out —
+`eve build`'s Vercel preset registers every schedule unconditionally, and
+the Hobby plan rejects anything more frequent than daily
+(`cron_jobs_limits_reached`). Confirmed when WP3's 5-minute collection
+schedules broke this repo's Vercel deployment: its GitHub integration still
+auto-built the root `agent/` tree from before WP2 moved the runtime to the
+VM. Fixed with root `vercel.json`'s `ignoreCommand`, since the schedules
+belong on the VM and were never meant to be built by Vercel in the first
+place. The generalizable lesson for WP6: **nothing that becomes a
+Vercel-side cron, or that calls Hyperliquid/Postgres/Docker directly, may
+ever live in the Next.js app** — see WP6's acceptance criteria.
 
 ## Open questions
 
