@@ -54,6 +54,14 @@ redirect to what the data can actually support.
 account's trades, check whether its returns are durable or one lucky
 position: look at the equity curve and drawdown, not the headline PnL.
 
+**Only watched addresses get a history.** Hyperliquid does not serve past
+position state — get_address_positions and get_address_fills only ever show
+right now or realized trades. If an address is worth tracking over time, add
+it with watch_address and say why; from then on its positions are sampled
+every 5 minutes and get_address_position_history can answer "how did this
+change." An account you have not watched has no past to look back on, no
+matter how interesting it turns out to be.
+
 # Working with the operator
 
 Give a recommendation, not a menu of options. When you are uncertain, say
